@@ -8,17 +8,10 @@ Add ranked matchmaking, skill ratings, and on-chain settlement to your game in m
 
 ```bash
 npm install @amp/sdk
-```
-
-Optional peer dependency for wallet signing:
-
-```bash
-npm install ethers
+npm install ethers  # optional peer dep for wallet signing
 ```
 
 ## Quickstart
-
-### Web game (browser wallet)
 
 ```typescript
 import { AMPClient, InjectedWalletSigner } from "@amp/sdk";
@@ -28,63 +21,77 @@ const amp = new AMPClient({
   signer: new InjectedWalletSigner(),
 });
 
-// One gasless signature to log in
 await amp.login();
-
-// Join a ranked queue
 await amp.joinQueue("amp-tactics", "ranked-1v1");
 
-// Listen for match assignments
 amp.events.on("match_found", async (match) => {
-  console.log(`Matched with ${match.opponent.wallet} (${match.opponent.rating} MMR)`);
-
-  // Run your game, then report
   const result = await playMyGame(match);
   await amp.reportMatch(match.matchId, result);
 });
 
-// Listen for results (rating updates)
 amp.events.on("match_result", (result) => {
-  console.log(`${result.won ? "Won" : "Lost"} — rating: ${result.you.ratingBefore} → ${result.you.ratingAfter}`);
+  console.log(`${result.won ? "Won" : "Lost"} — ${result.you.ratingBefore} → ${result.you.ratingAfter}`);
 });
 ```
 
-### Server-side game (private key)
+## Examples
 
-```typescript
-import { AMPClient, PrivateKeySigner } from "@amp/sdk";
+Three complete, runnable files in [`examples/`](examples/):
 
-const amp = new AMPClient({
-  serverUrl: "https://amp.playwithamp.xyz",
-  signer: new PrivateKeySigner(process.env.GAME_WALLET_KEY!),
-});
+| Example | What it covers |
+|---|---|
+| [`quick-start.ts`](examples/quick-start.ts) | Full lifecycle: login → queue → match → report → result |
+| [`multiplayer.ts`](examples/multiplayer.ts) | N-player FFA: commit-reveal, EIP-712 ladders, quorum |
+| [`custodial.ts`](examples/custodial.ts) | Fiat path: PayPal ↔ AVAX, no crypto needed for players |
 
-await amp.login();
+```bash
+git clone https://github.com/BradMyrick/amp-sdk-ts.git
+cd amp-sdk-ts && npm install
+npx tsx examples/quick-start.ts
 ```
 
-### Custodial (fiat-friendly, no crypto required)
+## Architecture
 
-```typescript
-import { AMPClient } from "@amp/sdk";
-
-const amp = new AMPClient({
-  serverUrl: "https://amp.playwithamp.xyz",
-  custodial: {
-    getAddress: async (playerId) => myBackend.getWallet(playerId),
-    signPersonalSign: async (playerId, message) => myBackend.sign(playerId, message),
-    signTypedData: async (playerId, td) => myBackend.signTypedData(playerId, td),
-    fundMatch: async (matchId, playerId) => myBackend.fund(matchId, playerId),
-    withdrawWinnings: async (matchId, playerId) => myBackend.withdraw(matchId, playerId),
-  },
-  playerId: currentPlayer.id,
-});
-
-await amp.login();
 ```
+┌─────────────────────────────────────────────────────────┐
+│  Your Game (browser, Node.js, etc.)                    │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  AMPClient (from @amp/sdk)                       │   │
+│  │  • login() — one gasless signature               │   │
+│  │  • joinQueue() — enter the ranked queue          │   │
+│  │  • reportMatch() — report win/loss/draw          │   │
+│  │  • events.on("match_found", ...) — real-time     │   │
+│  │  Signer: InjectedWallet | PrivateKey | Custodial  │   │
+│  └──────────────────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────┤
+│  REST + WebSocket → https://amp.playwithamp.xyz        │
+│  (AMP matchmaker — Rust) → Avalanche Fuji (contracts)  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### What AMP handles vs what you handle
+
+| AMP handles | Your game handles |
+|---|---|
+| Skill ratings (Glicko-2) | Determining who won |
+| Matchmaking queue + skill windows | Running the actual game |
+| Match assignment (WebSocket push) | Game UI/UX |
+| Result verification + settlement | Player experience |
+| On-chain escrow + payouts | Your game's economy |
+| Anti-collusion (commit-reveal) | Your game's rules |
+
+### Integration checklist
+
+1. `npm install @amp/sdk ethers`
+2. Create an `AMPClient` with your server URL and a signer
+3. Call `amp.login()` — one free signature
+4. Call `amp.joinQueue(gameId, rulesetId)`
+5. Subscribe to `match_found` on the WebSocket
+6. Run your game when matched
+7. Call `amp.reportMatch(matchId, "win"|"loss"|"draw")`
+8. Subscribe to `match_result` for rating updates
 
 ## API Reference
-
-### `AMPClient`
 
 | Method | Description |
 |---|---|
@@ -112,15 +119,16 @@ await amp.login();
 
 ### WebSocket Events
 
-| Event | Payload |
-|---|---|
-| `hello` | `{ wallet }` |
-| `queue_status` | `{ depth, waitedMs, skillWindow }` |
-| `match_found` | `{ matchId, opponent, yourRating, expiresAt }` |
-| `match_result` | `{ matchId, won, you: { ratingBefore, ratingAfter } }` |
-| `multi_lobby_formed` | `{ matchId, lobbySize, stakeWei, sessionNonce }` |
-| `multi_result` | `{ matchId, outcome: { delta } }` |
-| `multi_cancelled` | `{ matchId, reason }` |
+| Event | Payload | When |
+|---|---|---|
+| `hello` | `{ wallet }` | On connection |
+| `queue_status` | `{ depth, waitedMs, skillWindow }` | Every tick while queued |
+| `match_found` | `{ matchId, opponent, yourRating, expiresAt }` | Match assigned |
+| `match_result` | `{ matchId, won, you: { ratingBefore, ratingAfter } }` | Match settled |
+| `multi_lobby_formed` | `{ matchId, lobbySize, stakeWei, sessionNonce }` | N-player lobby ready |
+| `multi_result` | `{ matchId, outcome: { delta } }` | N-player settled |
+| `multi_cancelled` | `{ matchId, reason }` | N-player cancelled |
+| `match_update` | `{ matchId, state }` | State change (disputed, etc.) |
 
 ### Signer Interfaces
 
@@ -140,6 +148,13 @@ interface AMPCustodialProvider {
   fundMatch(matchId: string, playerId: string): Promise<void>;
   withdrawWinnings(matchId: string, playerId: string): Promise<void>;
 }
+```
+
+## Tests
+
+```bash
+npm test                                        # 16 unit tests
+npx vitest run tests/live.test.ts              # 8 live integration tests
 ```
 
 ## License
