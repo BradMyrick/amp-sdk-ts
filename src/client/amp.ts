@@ -325,7 +325,7 @@ export class AMPClient {
     if (this.signer || this.custodial) {
       const typedData = buildLadderTypedData({
         chainId: chainId ?? 43113,
-        contractAddress: contractAddress ?? "0xcabf7b626172fE55d54f03c346563671AbcC77f7",
+        contractAddress: contractAddress ?? "0x3BBb1812Ccafc4a8c849BfA340174a271e43B7D1",
         matchId,
         gameId: "0x" + "0".repeat(63) + "1",
         rankedPlacements: ranked.map(([addr]) => addr),
