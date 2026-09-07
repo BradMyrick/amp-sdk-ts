@@ -250,7 +250,9 @@ export class AMPClient {
 
   /** Join a party by invite code. */
   async joinParty(inviteCode: string): Promise<{ partyId: string; members: number }> {
-    return this.rest.post("/v1/parties/join", { inviteCode: inviteCode.toUpperCase() });
+    // NOTE: party endpoints use snake_case (historical wire format) —
+    // the server's JoinPartyReq has no camelCase alias.
+    return this.rest.post("/v1/parties/join", { invite_code: inviteCode.toUpperCase() });
   }
 
   /** Get party details. */
