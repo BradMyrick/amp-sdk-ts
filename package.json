@@ -1,0 +1,58 @@
+{
+  "name": "@amp/sdk",
+  "version": "0.1.0",
+  "description": "AMP SDK — integrate the Avalanche Matchmaking Protocol into your game. Wallet login, skill-rated queues, N-player lobbies, and on-chain settlement.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "eslint src tests",
+    "prepublishOnly": "npm run build && npm run test"
+  },
+  "keywords": [
+    "amp",
+    "matchmaking",
+    "avalanche",
+    "gaming",
+    "multiplayer",
+    "web3",
+    "glicko",
+    "skill-rating",
+    "queue",
+    "party",
+    "escrow"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BradMyrick/amp-sdk-ts.git"
+  },
+  "peerDependencies": {
+    "ethers": "^6.13.0"
+  },
+  "peerDependenciesMeta": {
+    "ethers": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "@types/node": "^22.0.0",
+    "ethers": "^6.13.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
