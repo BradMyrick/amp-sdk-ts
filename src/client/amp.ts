@@ -236,7 +236,10 @@ export class AMPClient {
     inviteCode: string;
     leader: string;
   }> {
-    return this.rest.post("/v1/parties", { gameId, rulesetId });
+    return this.rest.post("/v1/parties", {
+      game_id: gameId,
+      ruleset_id: rulesetId,
+    });
   }
 
   /** Join a party by invite code. */
