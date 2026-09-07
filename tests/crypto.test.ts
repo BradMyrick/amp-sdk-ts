@@ -95,6 +95,34 @@ describe("buildReportMessage", () => {
   });
 });
 
+describe("buildExitCertMessage", () => {
+  it("matches the amp-server format exactly", () => {
+    const msg = buildExitCertMessage("m-42", 3, 1200, "0xabc");
+    expect(msg).toBe(
+      "AMP exit certificate\n\n" +
+        "Match: m-42\n" +
+        "Rank: 3\n" +
+        "Exit frame: 1200\n" +
+        "State hash: 0xabc\n\n" +
+        "This signature is free. It certifies your elimination and unlocks your reporting bond.",
+    );
+  });
+});
+
+describe("cross-SDK golden vector", () => {
+  it("computeCommitHash matches the server encoding (addr20 ‖ stake8 ‖ salt-utf8)", async () => {
+    // Reference vector identical in the TS/C#/C++/Rust SDKs and amp-server.
+    const h = await computeCommitHash(
+      "0x95CC495dF579981d3Ffa4a8f77B93A17563E077a",
+      1_000_000_000_000_000,
+      "0xdeadbeef",
+    );
+    expect(h.toLowerCase()).toBe(
+      "0x2d5491f1ad0117eea0c302b3cfb07590fef2d3892349e017361afd1bb5e5be10",
+    );
+  });
+});
+
 describe("toHex", () => {
   it("encodes ASCII strings", () => {
     expect(toHex("hello")).toBe("0x68656c6c6f");
