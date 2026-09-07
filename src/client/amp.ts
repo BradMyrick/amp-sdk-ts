@@ -37,7 +37,13 @@ import type {
   WsEventMap,
   WsEventType,
 } from "../types/api.js";
-import { buildReportMessage, buildLadderTypedData, computeCommitHash, generateSalt } from "../crypto/helpers.js";
+import {
+  buildReportMessage,
+  buildExitCertMessage,
+  buildLadderTypedData,
+  computeCommitHash,
+  generateSalt,
+} from "../crypto/helpers.js";
 
 export interface AMPClientOptions {
   /** The amp-server base URL (e.g. "https://amp.playwithamp.xyz"). */
@@ -341,6 +347,125 @@ export class AMPClient {
   /** Trigger settlement for a quorum-reached multiplayer match. */
   async multiClaim(matchId: string): Promise<{ matchId: string; state: string }> {
     return this.rest.post(`/v1/multi/${matchId}/claim`);
+  }
+
+  // ── Exit certificates (multiplayer death certs) ─────
+
+  /**
+   * Submit an exit certificate ("death cert"): an eliminated player
+   * signs their rank, exit frame, and state hash, then disconnects.
+   * Auto-signs EIP-191 when a signer/custodial provider is present.
+   */
+  async submitExitCert(
+    matchId: string,
+    rank: number,
+    exitFrame: number,
+    stateHash: string,
+  ): Promise<{ matchId: string; recorded: boolean; message: string }> {
+    const message = buildExitCertMessage(matchId, rank, exitFrame, stateHash);
+    const signature = this.signer
+      ? await this.signer.signPersonalSign(message)
+      : this.custodial && this.playerId
+        ? await this.custodial.signPersonalSign(this.playerId, message)
+        : undefined;
+
+    return this.rest.post(`/v1/multi/${matchId}/exit`, {
+      rank,
+      exitFrame,
+      stateHash,
+      signature,
+    });
+  }
+
+  /**
+   * Countersign another player's exit certificate as a survivor,
+   * verifying their state hash against your own simulation.
+   */
+  async countersignExitCert(
+    matchId: string,
+    wallet: string,
+    stateHash: string,
+  ): Promise<{ matchId: string; countersigned: boolean }> {
+    return this.rest.post(`/v1/multi/${matchId}/exit/${wallet}`, { stateHash });
+  }
+
+  // ── Staked 1v1 escrow ───────────────────────────────
+
+  /**
+   * Verify on-chain escrow for a staked 1v1 match (participant only).
+   * Flips an escrow_pending match to live once both deposits check out.
+   */
+  async verifyEscrow(matchId: string): Promise<{ matchId: string; state: string }> {
+    return this.rest.post(`/v1/matches/${matchId}/escrow/verify`);
+  }
+
+  // ── Convenience ─────────────────────────────────────
+
+  /**
+   * Wait for a match assignment after joining a queue.
+   * Listens on the WebSocket (with a REST polling fallback) and resolves
+   * as soon as `match_found` fires. Rejects on timeout.
+   *
+   * @example
+   * ```typescript
+   * await amp.joinQueue("amp-tactics", "ranked-1v1");
+   * const match = await amp.waitForMatch(30_000);
+   * ```
+   */
+  async waitForMatch(timeoutMs = 30_000): Promise<MatchFound> {
+    return new Promise<MatchFound>((resolve, reject) => {
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`waitForMatch timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      const onFound = (data: MatchFound) => {
+        cleanup();
+        resolve(data);
+      };
+
+      // REST fallback in case the WebSocket is unavailable
+      const checkOnce = async () => {
+        if (settled) return;
+        try {
+          const me = await this.me();
+          if (me.liveMatchId) {
+            const m = await this.getMatch(me.liveMatchId);
+            cleanup();
+            resolve({
+              matchId: m.matchId,
+              gameId: m.gameId,
+              rulesetId: m.rulesetId,
+              bot: m.bot,
+              opponent: {
+                wallet: m.opponent.wallet,
+                rating: Number(m.opponent.ratingSnapshot ?? 1500),
+                region: "na",
+              },
+              yourRating: Number(m.you.ratingSnapshot ?? 1500),
+              expiresAt: m.expiresAt,
+            });
+          }
+        } catch {
+          /* keep polling */
+        }
+      };
+
+      const poller = setInterval(checkOnce, 2_000);
+
+      const cleanup = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        clearInterval(poller);
+        this.off("match_found", onFound);
+      };
+
+      this.on("match_found", onFound);
+      void checkOnce(); // check immediately, don't wait 2s
+    });
   }
 
   // ── Events (WebSocket) ──────────────────────────────

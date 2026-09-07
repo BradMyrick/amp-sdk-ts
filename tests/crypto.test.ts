@@ -4,6 +4,7 @@ import {
   generateSalt,
   buildLadderTypedData,
   buildReportMessage,
+  buildExitCertMessage,
   toHex,
 } from "../src/crypto/helpers.js";
 import { ethers } from "ethers";

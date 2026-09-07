@@ -57,5 +57,6 @@ export {
   generateSalt,
   buildLadderTypedData,
   buildReportMessage,
+  buildExitCertMessage,
   toHex,
 } from "./crypto/helpers.js";

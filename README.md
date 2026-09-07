@@ -114,6 +114,10 @@ npx tsx examples/quick-start.ts
 | `multiReveal(gameId, rulesetId, salt)` | Reveal commit |
 | `multiReport(matchId, ranked, ...)` | Submit N-player ladder (auto-signs EIP-712) |
 | `multiClaim(matchId)` | Trigger settlement |
+| `submitExitCert(matchId, rank, exitFrame, stateHash)` | Submit a death cert on elimination (auto-signs) |
+| `countersignExitCert(matchId, wallet, stateHash)` | Survivor verifies an exit cert |
+| `verifyEscrow(matchId)` | Verify on-chain escrow for staked 1v1 (flips to live) |
+| `waitForMatch(timeoutMs?)` | One call: queue → wait → `MatchFound` (WS + REST fallback) |
 | `on(event, handler)` | Subscribe to WebSocket event |
 | `disconnect()` | Close WebSocket |
 

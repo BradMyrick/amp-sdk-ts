@@ -94,6 +94,26 @@ export function buildReportMessage(matchId: string, result: string): string {
 }
 
 /**
+ * Build the EIP-191 message for a multiplayer exit certificate
+ * (death cert). Matches the amp-server's `submit_exit_cert`.
+ */
+export function buildExitCertMessage(
+  matchId: string,
+  rank: number,
+  exitFrame: number,
+  stateHash: string,
+): string {
+  return (
+    `AMP exit certificate\n\n` +
+    `Match: ${matchId}\n` +
+    `Rank: ${rank}\n` +
+    `Exit frame: ${exitFrame}\n` +
+    `State hash: ${stateHash}\n\n` +
+    `This signature is free. It certifies your elimination and unlocks your reporting bond.`
+  );
+}
+
+/**
  * Convert a UTF-8 string to hex (for personal_sign params).
  */
 export function toHex(str: string): string {
