@@ -95,6 +95,30 @@ describe("buildReportMessage", () => {
   });
 });
 
+describe("cross-SDK EIP-712 golden digest", () => {
+  it("buildLadderTypedData hashes to the ethers/contract reference digest", async () => {
+    const { ethers } = await import("ethers");
+    const typed = buildLadderTypedData({
+      chainId: 43113,
+      contractAddress: "0xcabf7b626172fE55d54f03c346563671AbcC77f7",
+      matchId: "0x" + "a".repeat(64),
+      gameId: "0x" + "0".repeat(63) + "1",
+      rankedPlacements: [
+        "0x95CC495dF579981d3Ffa4a8f77B93A17563E077a",
+        "0x79aDcEF0E2bdc030f5906aA80C6B50C3712c0064",
+      ],
+      transcriptHash: "0x" + "b".repeat(64),
+      sessionNonce: 42,
+    });
+    const digest = ethers.TypedDataEncoder.hash(
+      typed.domain, typed.types as never, typed.message,
+    );
+    expect(digest).toBe(
+      "0x7e3467e6d14daf2c2ba195a1147c550a480c30c867c202b7b02e385a8e48123f",
+    );
+  });
+});
+
 describe("buildExitCertMessage", () => {
   it("matches the amp-server format exactly", () => {
     const msg = buildExitCertMessage("m-42", 3, 1200, "0xabc");
