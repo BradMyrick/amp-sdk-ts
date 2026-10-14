@@ -1,17 +1,17 @@
 /**
  * Built-in signer implementations.
  *
- * - InjectedWalletSigner: uses window.ethereum (MetaMask, Rabby, etc.)
- * - PrivateKeySigner: uses a raw private key (server-side, testing)
+ * - InjectedWalletSigner: uses window.ethereum (Core, MetaMask, Rabby, etc.)
+ * - PrivateKeySigner: uses an ethers.Wallet with a private key (Node.js/server, testing)
  *
- * Game devs can also implement the AMPSigner interface themselves
- * for custom wallet solutions (hardware wallets, MPC, etc.).
+ * Game devs can also implement the AMPSigner interface or use ethers.Signer directly.
  */
 
+import { ethers } from "ethers";
 import type { AMPSigner, TypedData } from "../types/signer.js";
 import { toHex } from "../crypto/helpers.js";
 
-/** Check if an injected Ethereum provider is available. */
+/** Check if an injected Ethereum provider is available in globalThis. */
 function getInjectedProvider(): Record<string, unknown> | null {
   if (typeof globalThis === "undefined") return null;
   const eth = (globalThis as Record<string, unknown>).ethereum;
@@ -19,24 +19,36 @@ function getInjectedProvider(): Record<string, unknown> | null {
 }
 
 /**
- * Signer backed by a browser-injected wallet (MetaMask, Rabby, etc.).
- * Uses eth_requestAccounts + personal_sign + eth_signTypedData_v4.
+ * Signer backed by a browser-injected wallet (Avalanche Core, MetaMask, Rabby, etc.).
+ * Supports direct RPC calls, typed data signing, and ethers.BrowserProvider integration.
  */
 export class InjectedWalletSigner implements AMPSigner {
   private provider: Record<string, unknown>;
+  private browserProvider?: ethers.BrowserProvider;
 
-  constructor() {
-    this.provider = getInjectedProvider() ?? {};
-    if (!this.provider) {
-      throw new Error(
-        "No injected wallet found. Install MetaMask or use PrivateKeySigner.",
-      );
-    }
+  constructor(injectedProvider?: Record<string, unknown>) {
+    this.provider = injectedProvider ?? getInjectedProvider() ?? {};
   }
 
-  private async request(method: string, params: unknown[]): Promise<unknown> {
-    const req = this.provider as { request: (args: { method: string; params: unknown[] }) => Promise<unknown> };
-    return req.request({ method, params });
+  private ensureProvider(): Record<string, unknown> {
+    if (!this.provider || Object.keys(this.provider).length === 0) {
+      const detected = getInjectedProvider();
+      if (detected) {
+        this.provider = detected;
+      } else {
+        throw new Error(
+          "No injected wallet found. Install Avalanche Core, MetaMask, or use PrivateKeySigner."
+        );
+      }
+    }
+    return this.provider;
+  }
+
+  private async request(method: string, params: unknown[] = []): Promise<unknown> {
+    const eth = this.ensureProvider() as {
+      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+    };
+    return eth.request({ method, params });
   }
 
   async getAddress(): Promise<string> {
@@ -44,7 +56,7 @@ export class InjectedWalletSigner implements AMPSigner {
     if (!accounts || accounts.length === 0) {
       throw new Error("Wallet returned no accounts");
     }
-    return accounts[0];
+    return ethers.getAddress(accounts[0]);
   }
 
   async signPersonalSign(message: string): Promise<string> {
@@ -62,48 +74,93 @@ export class InjectedWalletSigner implements AMPSigner {
       JSON.stringify(typedData),
     ])) as string;
   }
+
+  /**
+   * Returns an ethers.BrowserProvider wrapping the injected provider.
+   */
+  getBrowserProvider(): ethers.BrowserProvider {
+    const eth = this.ensureProvider();
+    if (!this.browserProvider) {
+      this.browserProvider = new ethers.BrowserProvider(eth as unknown as ethers.Eip1193Provider);
+    }
+    return this.browserProvider;
+  }
+
+  /**
+   * Obtains an ethers.JsonRpcSigner from the browser provider.
+   */
+  async getEthersSigner(): Promise<ethers.JsonRpcSigner> {
+    const bp = this.getBrowserProvider();
+    return bp.getSigner();
+  }
+
+  /**
+   * Prompts the wallet to switch (or add) the Avalanche Fuji C-Chain (Chain ID 43113).
+   */
+  async switchToFuji(rpcUrl = "https://api.avax-test.network/ext/bc/C/rpc"): Promise<void> {
+    const chainIdHex = "0xA869"; // 43113
+    try {
+      await this.request("wallet_switchEthereumChain", [{ chainId: chainIdHex }]);
+    } catch (switchError: unknown) {
+      const code = (switchError as { code?: number })?.code;
+      if (code === 4902 || code === -32603) {
+        await this.request("wallet_addEthereumChain", [
+          {
+            chainId: chainIdHex,
+            chainName: "Avalanche Fuji C-Chain",
+            nativeCurrency: { name: "AVAX", symbol: "AVAX", decimals: 18 },
+            rpcUrls: [rpcUrl],
+            blockExplorerUrls: ["https://testnet.snowtrace.io"],
+          },
+        ]);
+      } else {
+        throw switchError;
+      }
+    }
+  }
 }
 
 /**
- * Signer backed by a raw private key. For server-side games and testing.
- * Uses ethers.js Wallet internally.
- *
- * IMPORTANT: Never expose private keys in browser code.
- * This signer is for Node.js backends and automated tests only.
+ * Signer backed by a raw private key. For Node.js servers, verifiers, and tests.
+ * Wraps ethers.Wallet internally.
  */
 export class PrivateKeySigner implements AMPSigner {
-  private wallet!: {
-    address: string;
-    signMessage: (msg: string) => Promise<string>;
-    signTypedData: (td: TypedData) => Promise<string>;
-  };
-  private ready: Promise<void>;
+  readonly privateKey: string;
+  readonly wallet: ethers.Wallet;
 
-  constructor(privateKey: string) {
-    this.ready = (async () => {
-      const { ethers } = await import("ethers");
-      const w = new ethers.Wallet(privateKey);
-      this.wallet = {
-        address: w.address,
-        signMessage: async (msg: string) => w.signMessage(msg),
-        signTypedData: async (td: TypedData) =>
-          w.signTypedData(td.domain, td.types, td.message),
-      };
-    })();
+  constructor(privateKey: string, provider?: ethers.Provider) {
+    const normalizedKey = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
+    this.privateKey = normalizedKey;
+    this.wallet = new ethers.Wallet(normalizedKey, provider);
   }
 
   async getAddress(): Promise<string> {
-    await this.ready;
-    return this.wallet.address;
+    return this.wallet.getAddress();
   }
 
   async signPersonalSign(message: string): Promise<string> {
-    await this.ready;
     return this.wallet.signMessage(message);
   }
 
   async signTypedData(typedData: TypedData): Promise<string> {
-    await this.ready;
-    return this.wallet.signTypedData(typedData);
+    return this.wallet.signTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message
+    );
+  }
+
+  /**
+   * Returns the underlying ethers.Wallet, optionally connected to a provider.
+   */
+  getWallet(provider?: ethers.Provider): ethers.Wallet {
+    return provider ? this.wallet.connect(provider) : this.wallet;
+  }
+
+  /**
+   * Returns the ethers.Signer representation.
+   */
+  getEthersSigner(provider?: ethers.Provider): ethers.Wallet {
+    return this.getWallet(provider);
   }
 }

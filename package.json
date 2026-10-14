@@ -1,7 +1,7 @@
 {
   "name": "@amp/sdk",
-  "version": "0.1.0",
-  "description": "AMP SDK — integrate the Avalanche Matchmaking Protocol into your game. Wallet login, skill-rated queues, N-player lobbies, and on-chain settlement.",
+  "version": "0.2.0",
+  "description": "Avalanche Tournament & Bracket SDK — on-chain tournament prize pools (AMPTournamentCup.sol on Avalanche Fuji), EIP-712 verifier attestations, pull-payment prize claims, and zero-dependency bracket engine (Single Elimination, Swiss, Round Robin).",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,6 +9,26 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./engine": {
+      "import": "./dist/engine/index.js",
+      "types": "./dist/engine/index.d.ts"
+    },
+    "./bracket": {
+      "import": "./dist/engine/index.js",
+      "types": "./dist/engine/index.d.ts"
+    },
+    "./signers": {
+      "import": "./dist/signers/index.js",
+      "types": "./dist/signers/index.d.ts"
+    },
+    "./constants": {
+      "import": "./dist/constants.js",
+      "types": "./dist/constants.d.ts"
+    },
+    "./crypto": {
+      "import": "./dist/crypto/helpers.js",
+      "types": "./dist/crypto/helpers.d.ts"
     }
   },
   "files": [
@@ -22,21 +42,27 @@
   },
   "keywords": [
     "amp",
-    "matchmaking",
     "avalanche",
+    "tournament",
+    "bracket",
+    "single-elimination",
+    "round-robin",
+    "swiss",
+    "prize-pool",
+    "escrow",
+    "eip-712",
+    "fuji",
     "gaming",
-    "multiplayer",
     "web3",
-    "glicko",
-    "skill-rating",
-    "queue",
-    "party",
-    "escrow"
+    "esports"
   ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BradMyrick/amp-sdk-ts.git"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0"
   },
   "peerDependencies": {
     "ethers": "^6.13.0"
